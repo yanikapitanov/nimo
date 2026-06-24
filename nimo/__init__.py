@@ -1,0 +1,1 @@
+"""Nimo FastAPI application package."""

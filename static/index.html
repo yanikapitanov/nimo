@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nimo Import</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="panel" aria-labelledby="page-title">
+      <div class="header">
+        <p class="eyebrow">Nimo</p>
+        <h1 id="page-title">Import Kindle highlights</h1>
+      </div>
+
+      <form id="import-form" class="upload-form">
+        <label class="file-picker" for="file-input">
+          <span class="file-picker__title">Choose My Clippings.txt</span>
+          <span id="file-name" class="file-picker__meta">No file selected</span>
+        </label>
+        <input id="file-input" name="file" type="file" accept=".txt,text/plain" required>
+
+        <button id="submit-button" type="submit" disabled>Upload</button>
+      </form>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <section id="result" class="result" hidden>
+        <div class="result__meta">
+          <span id="result-filename"></span>
+          <span id="result-count"></span>
+        </div>
+        <p id="result-summary" class="result__summary"></p>
+        <div id="highlight-list" class="highlight-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const form = document.querySelector('#import-form');
+    const fileInput = document.querySelector('#file-input');
+    const fileName = document.querySelector('#file-name');
+    const submitButton = document.querySelector('#submit-button');
+    const statusText = document.querySelector('#status');
+    const result = document.querySelector('#result');
+    const resultFilename = document.querySelector('#result-filename');
+    const resultCount = document.querySelector('#result-count');
+    const resultSummary = document.querySelector('#result-summary');
+    const highlightList = document.querySelector('#highlight-list');
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      fileName.textContent = file ? file.name : 'No file selected';
+      submitButton.disabled = !file;
+      statusText.textContent = '';
+      result.hidden = true;
+      resultSummary.textContent = '';
+      highlightList.replaceChildren();
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const file = fileInput.files[0];
+      if (!file) {
+        statusText.textContent = 'Choose a Kindle clippings text file first.';
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      submitButton.disabled = true;
+      submitButton.textContent = 'Uploading...';
+      statusText.textContent = 'Parsing and saving highlights...';
+      result.hidden = true;
+      resultSummary.textContent = '';
+      highlightList.replaceChildren();
+
+      try {
+        const response = await fetch('/api/import', {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.detail || 'Upload failed.');
+        }
+
+        resultFilename.textContent = payload.filename;
+        resultCount.textContent = `${payload.imported_count} new, ${payload.skipped_count} skipped`;
+        resultSummary.textContent = `${payload.count} parsed from ${payload.filename}. Duplicate highlights are left unchanged in the database.`;
+
+        payload.highlights.forEach((item) => {
+          const article = document.createElement('article');
+          article.className = 'highlight-card';
+
+          const title = document.createElement('h2');
+          title.textContent = item.book_name;
+
+          const author = document.createElement('p');
+          author.className = 'highlight-card__author';
+          author.textContent = item.author || 'Unknown author';
+
+          const quote = document.createElement('p');
+          quote.className = 'highlight-card__text';
+          quote.textContent = item.highlight;
+
+          article.append(title, author, quote);
+          highlightList.append(article);
+        });
+
+        result.hidden = false;
+        statusText.textContent = 'Highlights saved successfully.';
+      } catch (error) {
+        statusText.textContent = error.message;
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Upload';
+      }
+    });
+  </script>
+</body>
+</html>
