@@ -1,7 +1,7 @@
 import hashlib
 import re
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
@@ -21,6 +21,11 @@ def upload_page() -> FileResponse:
     return FileResponse("static/index.html")
 
 
+@app.get("/upload.html", include_in_schema=False)
+def manual_upload_page() -> FileResponse:
+    return FileResponse("static/upload.html")
+
+
 def normalize_for_hash(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().casefold())
 
@@ -34,6 +39,15 @@ def make_highlight_hash(book_name: str, author: str, highlight: str) -> str:
         ]
     )
     return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+
+def parsed_highlight_from_parts(book_name: str, author: str, highlight: str) -> schemas.ParsedHighlight:
+    return schemas.ParsedHighlight(
+        book_name=book_name,
+        author=author,
+        highlight=highlight,
+        hash=make_highlight_hash(book_name, author, highlight),
+    )
 
 
 def parse_kindle_clippings(content: str) -> list[schemas.ParsedHighlight]:
@@ -54,14 +68,7 @@ def parse_kindle_clippings(content: str) -> list[schemas.ParsedHighlight]:
             author = author[:-1].strip()
 
         highlight = "\n".join(lines[2:]).strip()
-        highlights.append(
-            schemas.ParsedHighlight(
-                book_name=book_name,
-                author=author,
-                highlight=highlight,
-                hash=make_highlight_hash(book_name, author, highlight),
-            )
-        )
+        highlights.append(parsed_highlight_from_parts(book_name, author, highlight))
 
     return highlights
 
@@ -104,6 +111,29 @@ def save_highlights(db: Session, highlights: list[schemas.ParsedHighlight]) -> t
 def health(db: Session = Depends(get_db)) -> dict[str, str]:
     db.execute(text("SELECT 1"))
     return {"status": "ok", "database": "connected"}
+
+
+@app.post("/api/import/new", response_model=schemas.ManualImportRead, status_code=status.HTTP_201_CREATED)
+def import_manual_highlight(
+    entry: schemas.ManualHighlightCreate,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> schemas.ManualImportRead:
+    book_name = entry.book_name.strip()
+    author = entry.author.strip()
+    highlight = entry.highlight.strip()
+    if not book_name or not author or not highlight:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Book title, author, and highlight are required",
+        )
+
+    parsed_highlight = parsed_highlight_from_parts(book_name, author, highlight)
+    saved_highlights, imported_count = save_highlights(db, [parsed_highlight])
+    if imported_count == 0:
+        response.status_code = status.HTTP_200_OK
+
+    return schemas.ManualImportRead(imported=imported_count == 1, highlight=saved_highlights[0])
 
 
 @app.post("/api/import", response_model=schemas.ImportRead)

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nimo Manual Highlight</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="panel" aria-labelledby="page-title">
+      <div class="header">
+        <p class="eyebrow">Nimo</p>
+        <h1 id="page-title">Add a highlight</h1>
+      </div>
+
+      <nav class="page-actions" aria-label="Import options">
+        <a class="text-link" href="/">Import from My Clippings.txt</a>
+      </nav>
+
+      <form id="manual-form" class="manual-form">
+        <label class="field" for="book-name">
+          <span>Book title</span>
+          <input id="book-name" name="book_name" type="text" autocomplete="off" required>
+        </label>
+
+        <label class="field" for="author">
+          <span>Author</span>
+          <input id="author" name="author" type="text" autocomplete="off" required>
+        </label>
+
+        <label class="field" for="highlight">
+          <span>Highlight</span>
+          <textarea id="highlight" name="highlight" rows="8" required></textarea>
+        </label>
+
+        <button id="submit-button" type="submit">Add highlight</button>
+      </form>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <section id="result" class="result" hidden>
+        <div class="result__meta">
+          <span id="result-title"></span>
+          <span id="result-state"></span>
+        </div>
+        <div id="highlight-list" class="highlight-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const form = document.querySelector('#manual-form');
+    const submitButton = document.querySelector('#submit-button');
+    const statusText = document.querySelector('#status');
+    const result = document.querySelector('#result');
+    const resultTitle = document.querySelector('#result-title');
+    const resultState = document.querySelector('#result-state');
+    const highlightList = document.querySelector('#highlight-list');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(form);
+      const payload = {
+        book_name: formData.get('book_name').trim(),
+        author: formData.get('author').trim(),
+        highlight: formData.get('highlight').trim(),
+      };
+
+      submitButton.disabled = true;
+      submitButton.textContent = 'Adding...';
+      statusText.textContent = 'Saving highlight...';
+      result.hidden = true;
+      highlightList.replaceChildren();
+
+      try {
+        const response = await fetch('/api/import/new', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || 'Save failed.');
+        }
+
+        const item = data.highlight;
+        resultTitle.textContent = item.book_name;
+        resultState.textContent = data.imported ? 'Saved' : 'Already exists';
+
+        const article = document.createElement('article');
+        article.className = 'highlight-card';
+
+        const title = document.createElement('h2');
+        title.textContent = item.book_name;
+
+        const author = document.createElement('p');
+        author.className = 'highlight-card__author';
+        author.textContent = item.author;
+
+        const quote = document.createElement('p');
+        quote.className = 'highlight-card__text';
+        quote.textContent = item.highlight;
+
+        article.append(title, author, quote);
+        highlightList.append(article);
+        result.hidden = false;
+        statusText.textContent = data.imported ? 'Highlight added.' : 'Duplicate highlight skipped.';
+
+        if (data.imported) {
+          form.reset();
+        }
+      } catch (error) {
+        statusText.textContent = error.message;
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Add highlight';
+      }
+    });
+  </script>
+</body>
+</html>

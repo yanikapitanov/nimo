@@ -56,6 +56,20 @@ Run the container:
 docker run -p 8000:8000 nimo
 ```
 
+Or use Docker Compose:
+
+```sh
+docker compose up --build
+```
+
+After the container starts, open:
+
+```txt
+http://localhost:8000/
+```
+
+The `0.0.0.0:8000` address in the Uvicorn log is the container bind address, not the browser URL.
+
 To persist the SQLite database between container runs, mount a local directory:
 
 ```sh
@@ -67,3 +81,4 @@ docker run -p 8000:8000 -v "$(pwd)/data:/app/data" nimo
 - `GET /`
 - `GET /health`
 - `POST /api/import` - upload Kindle `My Clippings.txt`, parse book title, author, and highlight text, and save new highlights while skipping duplicate hashes
+- `POST /api/import/new` - manually save one book title, author, and highlight while skipping duplicate hashes

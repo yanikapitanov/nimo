@@ -18,6 +18,15 @@ class ParsedHighlight(HighlightBase):
     hash: str
 
 
+class ManualHighlightCreate(HighlightBase):
+    pass
+
+
+class ManualImportRead(BaseModel):
+    imported: bool
+    highlight: HighlightRead
+
+
 class ImportRead(BaseModel):
     filename: str
     content_type: str | None
