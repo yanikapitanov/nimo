@@ -1,6 +1,10 @@
 import hashlib
 import re
 
+from contextlib import asynccontextmanager
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,11 +12,39 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .database import Base, engine, get_db
+from .database import Base, engine, get_db, SessionLocal
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Nimo", version="0.1.0")
+scheduler = BackgroundScheduler()
+
+
+def scheduled_send_highlights() -> None:
+    """Scheduled job to send random highlights via email."""
+    from .email import send_random_highlights_email
+
+    db = SessionLocal()
+    try:
+        send_random_highlights_email(db)
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> None:
+    scheduler.add_job(
+        scheduled_send_highlights,
+        trigger=CronTrigger(hour=9, minute=0),
+        id="send_daily_highlights",
+        name="Send 5 random highlights daily at 9 AM",
+        replace_existing=True,
+    )
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+
+app = FastAPI(title="Nimo", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
