@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Nimo — Kindle Highlights Sync",
+  "version": "1.0.0",
+  "description": "Sync your Kindle highlights from Amazon Kindle Notebook into your local Nimo library.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://lesen.amazon.de/*",
+    "https://read.amazon.de/*",
+    "https://read.amazon.com/*",
+    "https://read.amazon.co.uk/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://lesen.amazon.de/*",
+        "https://read.amazon.de/*",
+        "https://read.amazon.com/*",
+        "https://read.amazon.co.uk/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Nimo Kindle Sync",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
+    }
+  },
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "nimo-sync@local",
+      "strict_min_version": "109.0"
+    }
+  }
+}

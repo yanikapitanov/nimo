@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Nimo Sync</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-shell">
+    <header class="popup-header">
+      <div class="brand">
+        <span class="brand__icon">📖</span>
+        <span class="brand__title">Nimo Sync</span>
+      </div>
+      <div id="server-status" class="status-badge status-badge--offline">
+        <span class="status-dot"></span>
+        <span id="server-status-text">Checking Nimo...</span>
+      </div>
+    </header>
+
+    <main class="popup-body">
+      <!-- Non-Amazon view -->
+      <div id="wrong-page-view" class="view-panel" style="display: none;">
+        <p class="desc">Navigate to your Kindle Notebook to sync highlights.</p>
+        <button id="open-notebook-btn" class="btn btn--primary" type="button">
+          Open lesen.amazon.de/notebook
+        </button>
+      </div>
+
+      <!-- Active Notebook view -->
+      <div id="notebook-view" class="view-panel" style="display: none;">
+        <div class="preview-card">
+          <p class="preview-card__eyebrow">Active Book</p>
+          <h2 id="book-title" class="preview-card__title">Detecting...</h2>
+          <p id="book-author" class="preview-card__author"></p>
+          <p id="book-highlights-count" class="preview-card__meta">Scanning highlights...</p>
+        </div>
+
+        <div class="actions-group">
+          <button id="sync-current-btn" class="btn btn--primary" type="button">
+            📥 Import Current Book Highlights
+          </button>
+          <button id="sync-all-btn" class="btn btn--secondary" type="button">
+            📚 Import All Books Highlights
+          </button>
+        </div>
+      </div>
+
+      <!-- Sync feedback message -->
+      <div id="sync-message" class="sync-message" style="display: none;"></div>
+    </main>
+
+    <footer class="popup-footer">
+      <a id="open-library-link" class="footer-link" href="http://localhost:8000/library" target="_blank">
+        Open Nimo Library ↗
+      </a>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

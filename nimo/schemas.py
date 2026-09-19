@@ -35,3 +35,34 @@ class ImportRead(BaseModel):
     imported_count: int
     skipped_count: int
     highlights: list[HighlightRead]
+
+
+class BatchHighlightCreate(BaseModel):
+    highlights: list[HighlightBase]
+
+
+class BatchImportRead(BaseModel):
+    count: int
+    imported_count: int
+    skipped_count: int
+    highlights: list[HighlightRead]
+
+
+class HighlightsPagination(BaseModel):
+    items: list[HighlightRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class BookSummary(BaseModel):
+    book_name: str
+    author: str
+    count: int
+
+
+class LibraryStats(BaseModel):
+    total_highlights: int
+    total_books: int
+    total_authors: int
+

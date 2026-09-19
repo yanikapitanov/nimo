@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nimo — Highlights Library</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="panel panel--wide" aria-labelledby="page-title">
+      <div class="header">
+        <p class="eyebrow">Nimo</p>
+        <h1 id="page-title">Highlights Library</h1>
+      </div>
+
+      <nav class="page-actions" aria-label="Navigation">
+        <a class="text-link is-active" href="/library">Library</a>
+        <span class="nav-separator">•</span>
+        <a class="text-link" href="/">Import from My Clippings</a>
+        <span class="nav-separator">•</span>
+        <a class="text-link" href="/upload.html">Add a single highlight</a>
+      </nav>
+
+      <div id="stats-bar" class="library-stats-bar">
+        <span><strong id="stat-highlights">0</strong> highlights across <strong id="stat-books">0</strong> books</span>
+        <span id="active-filter-badge" style="display: none; font-size: 0.82rem; color: #1f6f5f; font-weight: 600;"></span>
+      </div>
+
+      <div class="library-toolbar">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input id="search-input" type="search" placeholder="Search quotes, books, or authors..." autocomplete="off">
+        </div>
+        <select id="book-select" class="filter-select" aria-label="Filter by book">
+          <option value="">All Books</option>
+        </select>
+      </div>
+
+      <div id="highlights-container" class="highlight-list">
+        <!-- Cards loaded dynamically via JavaScript -->
+      </div>
+
+      <div id="empty-state" class="empty-state" style="display: none;">
+        <div class="empty-state__icon">📚</div>
+        <h2 id="empty-title" class="empty-state__title">No highlights found</h2>
+        <p id="empty-desc" class="empty-state__desc">Your library doesn't have any highlights yet.</p>
+        <div id="empty-actions" class="empty-state__actions">
+          <a class="btn-outline" href="/">Import Clippings</a>
+          <a class="btn-outline" href="/upload.html">Add Highlight</a>
+        </div>
+      </div>
+
+      <nav id="pagination" class="pagination-container" aria-label="Pagination">
+        <span id="pagination-info">Loading...</span>
+        <div class="pagination-buttons">
+          <button id="prev-btn" class="page-btn" type="button" disabled>Previous</button>
+          <button id="next-btn" class="page-btn" type="button" disabled>Next</button>
+        </div>
+      </nav>
+    </section>
+  </main>
+
+  <script>
+    const PAGE_SIZE = 20;
+    let currentOffset = 0;
+    let totalItems = 0;
+    let searchDebounceTimeout = null;
+
+    const searchInput = document.querySelector('#search-input');
+    const bookSelect = document.querySelector('#book-select');
+    const container = document.querySelector('#highlights-container');
+    const emptyState = document.querySelector('#empty-state');
+    const emptyTitle = document.querySelector('#empty-title');
+    const emptyDesc = document.querySelector('#empty-desc');
+    const emptyActions = document.querySelector('#empty-actions');
+    const pagination = document.querySelector('#pagination');
+    const paginationInfo = document.querySelector('#pagination-info');
+    const prevBtn = document.querySelector('#prev-btn');
+    const nextBtn = document.querySelector('#next-btn');
+    const statHighlights = document.querySelector('#stat-highlights');
+    const statBooks = document.querySelector('#stat-books');
+    const activeFilterBadge = document.querySelector('#active-filter-badge');
+
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/stats');
+        if (!res.ok) return;
+        const stats = await res.json();
+        statHighlights.textContent = stats.total_highlights;
+        statBooks.textContent = stats.total_books;
+      } catch (e) {
+        console.error('Failed to load stats', e);
+      }
+    }
+
+    async function loadBooks() {
+      try {
+        const res = await fetch('/api/books');
+        if (!res.ok) return;
+        const books = await res.json();
+        const currentVal = bookSelect.value;
+        bookSelect.replaceChildren();
+
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = `All Books (${books.length})`;
+        bookSelect.append(defaultOption);
+
+        books.forEach((b) => {
+          const opt = document.createElement('option');
+          opt.value = b.book_name;
+          opt.textContent = `${b.book_name} (${b.count})`;
+          bookSelect.append(opt);
+        });
+
+        if (currentVal) {
+          bookSelect.value = currentVal;
+        }
+      } catch (e) {
+        console.error('Failed to load books', e);
+      }
+    }
+
+    async function loadHighlights() {
+      const q = searchInput.value.trim();
+      const book = bookSelect.value;
+
+      const params = new URLSearchParams({
+        limit: PAGE_SIZE,
+        offset: currentOffset,
+      });
+      if (q) params.set('q', q);
+      if (book) params.set('book', book);
+
+      // Update active filter badge
+      if (q || book) {
+        const filters = [];
+        if (book) filters.push(`Book: "${book}"`);
+        if (q) filters.push(`Search: "${q}"`);
+        activeFilterBadge.textContent = filters.join(' • ');
+        activeFilterBadge.style.display = 'inline';
+      } else {
+        activeFilterBadge.style.display = 'none';
+      }
+
+      container.replaceChildren();
+
+      try {
+        const res = await fetch(`/api/highlights?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch highlights');
+        const data = await res.json();
+
+        totalItems = data.total;
+        renderHighlights(data.items);
+        renderPagination(data.total, data.offset, data.limit);
+      } catch (error) {
+        console.error(error);
+        container.replaceChildren();
+        emptyState.style.display = 'grid';
+        emptyTitle.textContent = 'Error loading highlights';
+        emptyDesc.textContent = error.message;
+        emptyActions.style.display = 'none';
+        pagination.style.display = 'none';
+      }
+    }
+
+    function renderHighlights(items) {
+      if (items.length === 0) {
+        container.style.display = 'none';
+        emptyState.style.display = 'grid';
+        pagination.style.display = 'none';
+
+        const hasFilter = searchInput.value.trim() || bookSelect.value;
+        if (hasFilter) {
+          emptyTitle.textContent = 'No matching highlights';
+          emptyDesc.textContent = 'Try adjusting your search terms or book filter.';
+          emptyActions.innerHTML = '<button type="button" class="btn-outline" id="clear-filters-btn">Clear filters</button>';
+          document.querySelector('#clear-filters-btn').addEventListener('click', () => {
+            searchInput.value = '';
+            bookSelect.value = '';
+            currentOffset = 0;
+            loadHighlights();
+          });
+        } else {
+          emptyTitle.textContent = 'Your library is empty';
+          emptyDesc.textContent = 'Import your Kindle My Clippings.txt or add a single highlight to begin.';
+          emptyActions.innerHTML = `
+            <a class="btn-outline" href="/">Import Clippings</a>
+            <a class="btn-outline" href="/upload.html">Add Highlight</a>
+          `;
+        }
+        return;
+      }
+
+      container.style.display = 'grid';
+      emptyState.style.display = 'none';
+      pagination.style.display = 'flex';
+
+      items.forEach((item) => {
+        const card = document.createElement('article');
+        card.className = 'highlight-card';
+        card.dataset.id = item.id;
+
+        const title = document.createElement('h2');
+        title.textContent = item.book_name;
+
+        const author = document.createElement('p');
+        author.className = 'highlight-card__author';
+        author.textContent = item.author || 'Unknown author';
+
+        const quote = document.createElement('p');
+        quote.className = 'highlight-card__text';
+        quote.textContent = item.highlight;
+
+        const actions = document.createElement('div');
+        actions.className = 'highlight-card__actions';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'action-btn';
+        copyBtn.innerHTML = '<span>📋</span> <span>Copy</span>';
+        copyBtn.addEventListener('click', async () => {
+          const textToCopy = `"${item.highlight}"\n— ${item.author ? item.author + ', ' : ''}${item.book_name}`;
+          try {
+            await navigator.clipboard.writeText(textToCopy);
+            copyBtn.innerHTML = '<span>✓</span> <span>Copied!</span>';
+            setTimeout(() => {
+              copyBtn.innerHTML = '<span>📋</span> <span>Copy</span>';
+            }, 2000);
+          } catch (err) {
+            console.error('Clipboard copy failed', err);
+          }
+        });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'action-btn action-btn--delete';
+        deleteBtn.innerHTML = '<span>🗑</span> <span>Delete</span>';
+        deleteBtn.addEventListener('click', async () => {
+          if (!confirm(`Delete this highlight from "${item.book_name}"?`)) return;
+          try {
+            const delRes = await fetch(`/api/highlights/${item.id}`, { method: 'DELETE' });
+            if (delRes.ok) {
+              card.remove();
+              loadStats();
+              loadBooks();
+              // Reload page of highlights
+              loadHighlights();
+            } else {
+              alert('Failed to delete highlight.');
+            }
+          } catch (err) {
+            console.error('Delete error', err);
+            alert('Failed to delete highlight.');
+          }
+        });
+
+        actions.append(copyBtn, deleteBtn);
+        card.append(title, author, quote, actions);
+        container.append(card);
+      });
+    }
+
+    function renderPagination(total, offset, limit) {
+      if (total === 0) {
+        pagination.style.display = 'none';
+        return;
+      }
+      pagination.style.display = 'flex';
+
+      const from = offset + 1;
+      const to = Math.min(offset + limit, total);
+      paginationInfo.textContent = `Showing ${from}–${to} of ${total} highlights`;
+
+      prevBtn.disabled = offset <= 0;
+      nextBtn.disabled = offset + limit >= total;
+    }
+
+    // Event Listeners
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounceTimeout);
+      searchDebounceTimeout = setTimeout(() => {
+        currentOffset = 0;
+        loadHighlights();
+      }, 250);
+    });
+
+    bookSelect.addEventListener('change', () => {
+      currentOffset = 0;
+      loadHighlights();
+    });
+
+    prevBtn.addEventListener('click', () => {
+      if (currentOffset > 0) {
+        currentOffset = Math.max(0, currentOffset - PAGE_SIZE);
+        loadHighlights();
+        container.scrollTop = 0;
+      }
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentOffset + PAGE_SIZE < totalItems) {
+        currentOffset += PAGE_SIZE;
+        loadHighlights();
+        container.scrollTop = 0;
+      }
+    });
+
+    // Initial load
+    loadStats();
+    loadBooks();
+    loadHighlights();
+  </script>
+</body>
+</html>

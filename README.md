@@ -26,6 +26,7 @@ The app will be available at:
 - API: http://localhost:8000
 - Docs: http://localhost:8000/docs
 - Frontend: http://localhost:8000/
+- Library: http://localhost:8000/library
 - Health check: http://localhost:8000/health
 
 ## SQLite Database
@@ -78,7 +79,13 @@ docker run -p 8000:8000 -v "$(pwd)/data:/app/data" nimo
 
 ## Example Endpoints
 
-- `GET /`
-- `GET /health`
+- `GET /` - Batch upload page for Kindle `My Clippings.txt`
+- `GET /library` - Highlights library page with instant search, filtering, and management
+- `GET /upload.html` - Manual single-highlight entry form
+- `GET /health` - Health check & DB connection ping
+- `GET /api/highlights` - Paginated highlights with `q` search, `book`, and `author` filters
+- `GET /api/books` - Distinct books with highlight counts
+- `GET /api/stats` - Summary counts of highlights, books, and authors
+- `DELETE /api/highlights/{id}` - Delete a single highlight
 - `POST /api/import` - upload Kindle `My Clippings.txt`, parse book title, author, and highlight text, and save new highlights while skipping duplicate hashes
 - `POST /api/import/new` - manually save one book title, author, and highlight while skipping duplicate hashes

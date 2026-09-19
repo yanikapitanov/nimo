@@ -2,13 +2,15 @@ import hashlib
 import re
 
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -45,6 +47,14 @@ async def lifespan(app: FastAPI) -> None:
 
 
 app = FastAPI(title="Nimo", version="0.1.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
@@ -56,6 +66,12 @@ def upload_page() -> FileResponse:
 @app.get("/upload.html", include_in_schema=False)
 def manual_upload_page() -> FileResponse:
     return FileResponse("static/upload.html")
+
+
+@app.get("/library", include_in_schema=False)
+@app.get("/library.html", include_in_schema=False)
+def library_page() -> FileResponse:
+    return FileResponse("static/library.html")
 
 
 def normalize_for_hash(value: str) -> str:
@@ -196,3 +212,111 @@ async def import_text_file(file: UploadFile = File(...), db: Session = Depends(g
         skipped_count=len(parsed_highlights) - imported_count,
         highlights=saved_highlights,
     )
+
+
+@app.post("/api/import/batch", response_model=schemas.BatchImportRead, status_code=status.HTTP_200_OK)
+def import_batch_highlights(
+    payload: schemas.BatchHighlightCreate,
+    db: Session = Depends(get_db),
+) -> schemas.BatchImportRead:
+    if not payload.highlights:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No highlights provided")
+
+    parsed_list: list[schemas.ParsedHighlight] = []
+    for item in payload.highlights:
+        book_name = item.book_name.strip()
+        author = item.author.strip()
+        highlight = item.highlight.strip()
+        if not book_name or not highlight:
+            continue
+        parsed_list.append(parsed_highlight_from_parts(book_name, author, highlight))
+
+    if not parsed_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid highlights found in payload",
+        )
+
+    saved_highlights, imported_count = save_highlights(db, parsed_list)
+    return schemas.BatchImportRead(
+        count=len(parsed_list),
+        imported_count=imported_count,
+        skipped_count=len(parsed_list) - imported_count,
+        highlights=saved_highlights,
+    )
+
+
+@app.get("/api/highlights", response_model=schemas.HighlightsPagination)
+def list_highlights(
+    q: Annotated[str | None, Query(description="Search query across quote text, book title, and author")] = None,
+    book: Annotated[str | None, Query(description="Filter by book name")] = None,
+    author: Annotated[str | None, Query(description="Filter by author")] = None,
+    limit: Annotated[int, Query(ge=1, le=100, description="Page limit")] = 20,
+    offset: Annotated[int, Query(ge=0, description="Page offset")] = 0,
+    db: Session = Depends(get_db),
+) -> schemas.HighlightsPagination:
+    stmt = select(models.Highlight)
+    if q and q.strip():
+        search_pattern = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                models.Highlight.highlight.ilike(search_pattern),
+                models.Highlight.book_name.ilike(search_pattern),
+                models.Highlight.author.ilike(search_pattern),
+            )
+        )
+    if book and book.strip():
+        stmt = stmt.where(models.Highlight.book_name == book.strip())
+    if author and author.strip():
+        stmt = stmt.where(models.Highlight.author == author.strip())
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    items = db.scalars(stmt.order_by(models.Highlight.id.desc()).offset(offset).limit(limit)).all()
+
+    return schemas.HighlightsPagination(
+        items=[schemas.HighlightRead.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/api/books", response_model=list[schemas.BookSummary])
+def list_books(db: Session = Depends(get_db)) -> list[schemas.BookSummary]:
+    stmt = (
+        select(
+            models.Highlight.book_name,
+            models.Highlight.author,
+            func.count(models.Highlight.id).label("count"),
+        )
+        .group_by(models.Highlight.book_name, models.Highlight.author)
+        .order_by(models.Highlight.book_name.asc())
+    )
+    rows = db.execute(stmt).all()
+    return [
+        schemas.BookSummary(book_name=row.book_name, author=row.author, count=row.count)
+        for row in rows
+    ]
+
+
+@app.get("/api/stats", response_model=schemas.LibraryStats)
+def get_library_stats(db: Session = Depends(get_db)) -> schemas.LibraryStats:
+    total_highlights = db.scalar(select(func.count(models.Highlight.id))) or 0
+    total_books = db.scalar(select(func.count(func.distinct(models.Highlight.book_name)))) or 0
+    total_authors = db.scalar(select(func.count(func.distinct(models.Highlight.author)))) or 0
+    return schemas.LibraryStats(
+        total_highlights=total_highlights,
+        total_books=total_books,
+        total_authors=total_authors,
+    )
+
+
+@app.delete("/api/highlights/{highlight_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_highlight(highlight_id: int, db: Session = Depends(get_db)) -> Response:
+    highlight = db.get(models.Highlight, highlight_id)
+    if not highlight:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Highlight not found")
+    db.delete(highlight)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
